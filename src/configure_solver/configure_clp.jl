@@ -3,7 +3,7 @@
 
 Reads user-specified solver settings from clp\_settings.yml in the directory specified by the string solver\_settings\_path.
 
-Returns a `MathOptInterface.OptimizerWithAttributes` Clp optimizer instance to be used in the `GenX.generate_model()` method.
+Returns a MathOptInterface OptimizerWithAttributes Clp optimizer instance to be used in the GenX.generate_model() method.
 
 The Clp optimizer instance is configured with the following default parameters if a user-specified parameter for each respective field is not provided:
 
@@ -20,11 +20,13 @@ The Clp optimizer instance is configured with the following default parameters i
  - Perturbation = 100 (switch on perturbation (50), automatic (100), don't try perturbing (102))
 
 """
-function configure_clp(solver_settings_path::String, optimizer::Any)
-    solver_settings = YAML.load(open(solver_settings_path))
-    solver_settings = convert(Dict{String, Any}, solver_settings)
+function configure_clp(solver_settings_path::String)
 
-    default_settings = Dict{String, Any}("Feasib_Tol" => 1e-7,
+	solver_settings = YAML.load(open(solver_settings_path))
+	solver_settings = convert(Dict{String, Any}, solver_settings)
+
+    default_settings = Dict{String,Any}(
+        "Feasib_Tol" => 1e-7,
         "DualObjectiveLimit" => 1e308,
         "MaximumIterations" => 2147483647,
         "TimeLimit" => -1.0,
@@ -33,14 +35,16 @@ function configure_clp(solver_settings_path::String, optimizer::Any)
         "Method" => 5,
         "InfeasibleReturn" => 0,
         "Scaling" => 3,
-        "Perturbation" => 100)
+        "Perturbation" => 100,
+    )
 
     attributes = merge(default_settings, solver_settings)
 
     key_replacement = Dict("Feasib_Tol" => "PrimalTolerance",
-        "TimeLimit" => "MaximumSeconds",
-        "Pre_Solve" => "PresolveType",
-        "Method" => "SolveType")
+                           "TimeLimit" => "MaximumSeconds",
+                           "Pre_Solve" => "PresolveType",
+                           "Method" => "SolveType",
+                          )
 
     attributes = rename_keys(attributes, key_replacement)
 
@@ -49,5 +53,5 @@ function configure_clp(solver_settings_path::String, optimizer::Any)
     attributes["DualTolerance"] = attributes["PrimalTolerance"]
 
     attributes::Dict{String, Any}
-    return optimizer_with_attributes(optimizer, attributes...)
+	return optimizer_with_attributes(Clp.Optimizer, attributes...)
 end

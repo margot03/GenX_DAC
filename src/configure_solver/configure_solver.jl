@@ -1,36 +1,30 @@
 @doc raw"""
-    infer_solver(optimizer::Any)
-Return the name (`String`) of the solver to be used in the GenX.configure\_solver method according to the solver imported by the user. 
-"""
-function infer_solver(optimizer::Any)
-    return lowercase(string(parentmodule(optimizer)))
-end
+	configure_solver(solver::String, solver_settings_path::String)
 
-@doc raw"""
-	configure_solver(solver_settings_path::String, optimizer::Any)
+This method returns a solver-specific MathOptInterface OptimizerWithAttributes optimizer instance to be used in the GenX.generate\_model() method.
 
-This method returns a solver-specific `MathOptInterface.OptimizerWithAttributes` optimizer instance to be used in the `GenX.generate\_model()` method.
-
-# Arguments
-- `solver_settings_path::String`: specifies the path to the directory that contains the settings YAML file for the specified solver.
-- `optimizer::Any`: the optimizer instance to be configured.
+The "solver" argument is a string which specifies the solver to be used. It is not case sensitive.
 Currently supported solvers include: "Gurobi", "CPLEX", "Clp", "Cbc", or "SCIP"
 
-# Returns
-- `optimizer::MathOptInterface.OptimizerWithAttributes`: the configured optimizer instance.
+The "solver\_settings\_path" argument is a string which specifies the path to the directory that contains the settings YAML file for the specified solver.
+
 """
-function configure_solver(solver_settings_path::String, optimizer::Any)
-    solver_name = infer_solver(optimizer)
-    path = joinpath(solver_settings_path, solver_name * "_settings.yml")
+function configure_solver(solver::String, solver_settings_path::String)
 
-    configure_functions = Dict("highs" => configure_highs,
-        "gurobi" => configure_gurobi,
-        "cplex" => configure_cplex,
-        "clp" => configure_clp,
-        "cbc" => configure_cbc,
-        "scip" => configure_scip)
+    solver = lowercase(solver)
 
-    return configure_functions[solver_name](path, optimizer)
+    path = joinpath(solver_settings_path, solver*"_settings.yml")
+
+    configure_functions = Dict(
+                               "highs" => configure_highs,
+                               "gurobi" => configure_gurobi,
+                               "cplex" => configure_cplex,
+                               "clp" => configure_clp,
+                               "cbc" => configure_cbc,
+                               "scip" => configure_scip,
+                              )
+
+    return configure_functions[solver](path)
 end
 
 @doc raw"""
@@ -47,8 +41,7 @@ function rename_keys(attributes::Dict, new_key_names::Dict)
         else
             new_key = new_key_names[old_key]
             if haskey(attributes, new_key)
-                @error "Colliding keys: '$old_key' needs to be renamed to '$new_key' but '$new_key' already exists in",
-                attributes
+                @error "Colliding keys: '$old_key' needs to be renamed to '$new_key' but '$new_key' already exists in", attributes
             end
         end
         updated_attributes[new_key] = value
