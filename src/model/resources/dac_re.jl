@@ -24,8 +24,8 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
 
     #######################
     # case details
-    additional_flag = false # True: Uses custom file from dac_additional_resources_dac.jl containing R_IDs of clean, additional gens. False: Uses R_IDs for clean generators in generator input data.
-    policy_case = "none" ## "hourly", "annual", "emissions", "none" (basecase, DAC no policy)
+    additional_flag = setup["Additional"] # Uses custom file from dac_additional_resources_dac.jl containing R_IDs of clean, additional gens. False: Uses R_IDs for clean generators in generator input data.
+    policy_case = lowercase(setup["PolicyCase"]) # "hourly", "annual", "emissions", "none" (basecase, DAC no policy)
     #######################
 
     # Parameter Scaling factor
@@ -54,11 +54,11 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
 
     dfGen = inputs["dfGen"]   #generator data
 
-    if additional_flag && policy_case != "none"
+    if additional_flag == 1 && policy_case != "none"
         println("additional gens")
         ## ADDITIONAL RESOURCES, already filtered for new build, clean, and additional logic
-        ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_65_63.csv")
-        # ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_48_42.csv")
+        # ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_79_86.csv")
+        ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_79_92.csv")
         eligible_gens = ad_df.R_ID
     else
         println("non-additional gens")
@@ -171,7 +171,7 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
 
     # Fixed DAC cost for energy (this covers capex of heat pump, and other energy related fixed costs for the DAC plant itself)
     ## should eCFixed_DAC_Energy be scaled by factor of 1/heat_pump_coeff_perf? Both heatpump_cost_perMW and vHP_CAP are in terms of MW-electric, not MW-thermal 
-    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], heatpump_cost_perMW*vHP_CAP[y]*(1/heat_pump_coeff_perf) + dfDac[y, :Energy_Fix_Cost_per_yr])
+    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], heatpump_cost_perMW*vHP_CAP[y] + dfDac[y, :Energy_Fix_Cost_per_yr]) # heatpump_cost_perMW*vHP_CAP[y]*(1/heat_pump_coeff_perf)
     # total fixed costs for all the DAC energy demand 
 	@expression(EP, eTotalCFixedDAC_Energy, sum(eCFixed_DAC_Energy[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC_Energy
@@ -253,8 +253,8 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     @constraint(EP, cDAC_CF, DAC_removals_hourly .==  (vCAP_DAC .* dfDac.CF))
     
     # this cDAC_removal enforces one zone having capacity and one zone having none (if Deployment = 1Mt for zone 1, = 0Mt for zone 2)
-    # @constraint(EP, cDAC_removal[y = 1:G_DAC], DAC_removals_hourly[y] ==  dfDac[y, :Deployment])
-    @constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
+    @constraint(EP, cDAC_removal[y = 1:G_DAC], DAC_removals_hourly[y] ==  dfDac[y, :Deployment])
+    # @constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
 
     # get the CO2 balance 
     # the net negative CO2 for each DAC y at each hour t, CO2 emissions from heat consumption minus CO2 captured by DAC = net negative emissions

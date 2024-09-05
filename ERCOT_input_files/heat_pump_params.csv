@@ -1,0 +1,4 @@
+key,value
+coeff_performance,2
+heatpump_cost_perMW,6.48e5
+var_cost_per_MW,0

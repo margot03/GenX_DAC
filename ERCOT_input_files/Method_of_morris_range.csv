@@ -1,0 +1,4 @@
+File,Resource,Zone,Lower_bound,Upper_bound,Parameter,Group,p_steps,total_num_trajectory,num_trajectory,len_design_mat,policy
+dac,ELEC_DAC_1,1,-50,50,Fix_Cost_per_tCO2_yr,dac_capex,10,5,2,16,reference
+dac,ELEC_DAC_1,1,-50,50,Var_OM_Cost_per_tCO2,dac_var,10,,,,
+dac,ELEC_DAC_1,1,-50,50,Electricity_MWh_per_CO2_metric_ton,power ,10,,,,

@@ -1,0 +1,7 @@
+key,value
+Max_Steam_Diversion_Per_Plant,0.4
+Heat_extraction_per_percent_steam_diversion,0.429
+Power_Heat_Ratio,1.06
+MW_to_GJ_conversion,3.6
+HX_cost_multiplier,288.1
+HX_cost_constant,15887
