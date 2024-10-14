@@ -34,7 +34,7 @@ InvestmentCredit: 0
 CapResPeriodLength: 8760     
 DAC: 1
 Additional: 0 # Flag for turning on additional generators in dac_re.jl; 0 = not additional generators; 1 = additional generators
-PolicyCase: "hourly" # Specifies the current policy case to run: "None", "Annual", "Hourly", "EmissionsMatching"; noDAC has "None" and DAC = 0; basecase (DAC but no policy) has "None" and DAC = 1
+PolicyCase: "None" # Specifies the current policy case to run: "None", "Annual", "Hourly", "EmissionsMatching"; noDAC has "None" and DAC = 0; basecase (DAC but no policy) has "None" and DAC = 1
 NetZero: 0                         
 
 

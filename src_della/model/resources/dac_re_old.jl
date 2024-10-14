@@ -18,30 +18,29 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 	DAC RE
 """
 
-function dac_re!(EP::Model, inputs::Dict, setup::Dict)
+function dac_re_old!(EP::Model, inputs::Dict, setup::Dict)
 
 	println("DAC module")
-
-    #######################
-    # case details
-    additional_flag = setup["Additional"] # Uses custom file from dac_additional_resources_dac.jl containing R_IDs of clean, additional gens. False: Uses R_IDs for clean generators in generator input data.
-    policy_case = lowercase(setup["PolicyCase"]) # "hourly", "annual", "emissions", "none" (basecase, DAC no policy)
-    #######################
-
-    # Parameter Scaling factor
+    
+    # scale factor
 	## ModelScalingFactor = 1e3
 	scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
     omega = inputs["omega"] ## has to deal with subperiods and weights for time sampling
 
-    T = inputs["T"]     # Number of time steps (hours)
-	Z = inputs["Z"]     # Number of zones
-
-    hours_per_subperiod = inputs["hours_per_subperiod"]
-
     ## Heat Pump params data
     hp_params = inputs["HP_params"]
+
     heat_pump_coeff_perf = hp_params["coeff_performance"] # MW thermal / MW    ex. 2 = 2 MW thermal output / 1 MW electricity input 
-    heatpump_cost_perMW = hp_params["heatpump_cost_perMW"] # $/MW electric, annualized (investment fixed cost)
+    heatpump_cost_perMW = hp_params["heatpump_cost_perMW"]/scale_factor # $/MW electricity, annualized (investment fixed cost)
+    #heat_pump_var_om_per_mw = hp_params["var_cost_per_MW"] # $ / MW thermal heat, assumed to have 0 non-fuel vom costs
+
+	
+    dfDac = inputs["dfDac"]
+    
+	T = inputs["T"]     # Number of time steps (hours)
+	Z = inputs["Z"]     # Number of zones
+
+	hours_per_subperiod = inputs["hours_per_subperiod"]
 
     # load dac input data and coupling parameters
     dfDac = inputs["dfDac"]
@@ -50,53 +49,19 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     DAC_ID = dfDac[!,:DAC_ID]  # collect ids
     G_DAC = length(collect(skipmissing(dfDac[!,:R_ID])))  # number of DAC types
     
-    re_dac = dfDac[dfDac.DAC_heat_resource.=="RE", :R_ID] #subset of electricity (RE) dac facilities
+    re_dac = dfDac[dfDac.DAC_heat_resource.=="RE", :R_ID]           #subset of electricity (RE) dac facilities
 
-    dfGen = inputs["dfGen"]   #generator data --> duplicated_gens if DAC == 1
+    dfGen = inputs["dfGen"]   #generator data
 
-    dfGen_GRID = dfGen[dfGen.DAC .== 0,:] # all initial generators, including generators that are not duplicated later and ones that are 
-    dfGen_DAC = dfGen[dfGen.DAC .!= 0,:] # all generators that are duplicated for DAC and are clean 
+    new_build_eligible_gens = inputs["NEW_CAP"] # R_IDs of all gens eligible for new build
+    vre_gens = intersect(inputs["VRE"], new_build_eligible_gens) # all VRE gens (R_IDs) eligible for new build
+    geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
+    re_gens = [vre_gens; geothermal_gens] # R_IDs of all clean gens (VRE, geothermal), eligible for new build
 
-    # dfGen_GRID = 
-    # for r in dfGen_DAC.DAC_R_ID
-    #     dfGen_GRID = dfGen[dfGen.DAC .== 0,:] # all initial generators that are not duplicated (generate for the grid only, not eligible for DAC) 
-    
-    if additional_flag == 1
-        # ## ADDITIONAL RESOURCES, already filtered for new build, clean, and additional logic
-        # println("additional gens")
-        # ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_79_92.csv")
-        # eligible_gens = ad_df.R_ID
-
-        ## INCREMENTAL RESOURCES
-        println("incremental gens")
-        # start with dfGen_DAC, these are all the resources available for DAC that are clean anyway, now needt to make sure they are new build
-        new_build_gens = intersect(dfGen_DAC[dfGen_DAC.New_Build.==1,:R_ID], dfGen_DAC[dfGen_DAC.Max_Cap_MW.!=0,:R_ID])
-        # edit duplicated gens for only new_builds
-        # all generators that are duplicated for DAC, are clean, and are incremental (new_build)
-        dfGen_DAC_incr = DataFrame([c => [] for c in names(dfGen_DAC)])
-        for r in new_build_gens
-            append!(dfGen_DAC_incr, dfGen_DAC[dfGen_DAC.R_ID.==r, :])
-        end
-        
-        # old code
-        # println("incremental gens")
-        # new_build_eligible_gens = dfGen_DAC.R_ID
-        # vre_gens = intersect(inputs["VRE"], new_build_eligible_gens) # all VRE gens (R_IDs) eligible for new build
-        # # geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
-        # nuclear_gens = intersect(inputs["nuclear"], new_build_eligible_gens)
-        # eligible_gens = [vre_gens; nuclear_gens]
-        
-    else
-        println("non-incremental gens")
-        dfGen_DAC_incr = dfGen_DAC
-        # don't need to do anything else for non-incremental because duplicated generators already filters for clean generators
-        # remove new_build requirement 
-        # vre_gens = inputs["VRE"] # all VRE gens (R_IDs) eligible for new build
-        # # geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
-        # nuclear_gens = inputs["nuclear"]
-        # eligible_gens = [vre_gens; nuclear_gens] # R_IDs of all clean gens eligible for new build
-
-    end
+    ## ADDITIONAL RESOURCES 
+    # ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_48_42.csv")
+    # ad_gens = ad_df.R_ID
+    ad_gens = re_gens
 
     MW_to_GJ_conversion = Dac_params["MW_to_GJ_conversion"]   #3.6
     
@@ -117,31 +82,31 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     end)
 
     # heat consumption from heat resources, GJ / hour 
-    @expression(EP, eDAC_heat_consumption[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Heat_GJ_per_CO2_metric_ton]) 
-    ## GJ / hour = tCO2 removed / hour * GJ / tCO2
+    @expression(EP, eDAC_heat_consumption[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Heat_GJ_per_CO2_metric_ton] * omega[t]) ## GJ / hour = tCO2 removed / hour * GJ / tCO2
 
     # the electricity consumption for DAC, MWh/t CO2
-    @expression(EP, eDAC_power[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Electricity_MWh_per_CO2_metric_ton])
+    @expression(EP, eDAC_power[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Electricity_MWh_per_CO2_metric_ton] * omega[t])
     ## tCO2 captured / hour * MWh / tCO2 = MW
 
     ## the heat demand (in MW electric) for DAC facility y in hour t, converted from GJ to MW thermal to MW electric, MWelec / hr  
     @expression(EP, eDAC_heat_demand_MWelec[y in DAC_ID, t = 1:T], EP[:eDAC_heat_consumption][y,t]*(1/MW_to_GJ_conversion)*(1/heat_pump_coeff_perf) / scale_factor)
 
     ## DAC total demand, annual demand for policy constraints (hourly, annual, emissions)
-    @expression(EP, eDAC_demand_tot[z = 1:Z, t = 1:T], sum((eDAC_heat_demand_MWelec[y,t] + EP[:eDAC_power][y, t]) * omega[t] for y in dfDac[dfDac[!,:Zone].==z,:R_ID]))
+    @expression(EP, eDAC_demand_tot[z = 1:Z, t = 1:T], sum(eDAC_heat_demand_MWelec[y,t] + EP[:eDAC_power][y, t] for y in dfDac[dfDac[!,:Zone].==z,:R_ID]))
     @expression(EP, eDAC_Annual_demand[z = 1:Z], sum(eDAC_demand_tot[z,t] for t in 1:T))
     
     ## Clean generation (RE) total generation, annual generation for policy constraints
-    # @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in intersect(eligible_gens, dfGen[dfGen[!,:Zone].==z,:R_ID])))
-    @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in dfGen_DAC_incr[dfGen_DAC_incr[!,:Zone].==z,:R_ID]))
+    # @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in intersect(re_gens, dfGen[dfGen[!,:Zone].==z,:R_ID]))) #need to include Z as a dimension, edit to be intersect(re_gens, z)        
+    @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in intersect(ad_gens, dfGen[dfGen[!,:Zone].==z,:R_ID])))         
     @expression(EP, eRE_Annual_gen[z = 1:Z], sum(eRE_output[z,t] for t in 1:T))
 
-    
+    policy_type = "none" ## "hourly", "annual", "emissions"
+
     for z in 1:Z
         # all DAC demand in this zone that is of type RE
         dac_z_re = intersect(re_dac, dfDac[dfDac[!,:Zone].==z,:R_ID])
 
-        if policy_case == "hourly"
+        if policy_type == "hourly"
             println("hourly matching: ", z)
             
             @constraints(EP, begin
@@ -149,7 +114,7 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
             end)
             ## MWelec for the heatpumps + DAC power MWelec <= MWelec from RE supply
 
-        elseif policy_case == "annual"
+        elseif policy_type == "annual"
             println("annual matching: ", z)
             
             ## all DAC demand must be equal to current generation of all RE gens
@@ -157,7 +122,7 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
             ## MWelec for the heatpumps + DAC power MWelec <= MWelec from RE supply
             ## must be <= for each zone, otherwise could some some generation that's undeliverable meeting the dac demand
 
-        elseif policy_case == "emissions"
+        elseif policy_type == "emissions"
             println("emissions matching")
             
             ## all DAC demand must be equal to current generation of all RE gens
@@ -176,31 +141,17 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
 
         ## HP heat output (MW thermal)(COP for MW electric) <= HP capacity (MW electric)
         @constraints(EP, begin
-            [y in dac_z_re, t = 1:T], vHP_heat[y,t] <= vHP_CAP[y]*(heat_pump_coeff_perf)
+            [y in dac_z_re, t = 1:T], vHP_heat[y,t]*(1/heat_pump_coeff_perf) <= vHP_CAP[y] 
         end)
 
         ## DAC heat demand for hour t <= max HP capacity (implied by constraints above)
 
     end
 
-    # constraint: ensure that sum(duplicated resources power in hour t) <= max power output 
-    # r = current resource that's duplicated for both grid and DAC application
-    # vP_DAC[r,t] = power generated by duplicated resource r in hour t, so indexing in dfGen_DAC for all the duplicated resources (even if we exclude non-incremental ones, we still need to match their min/max generation so they don't get double dispatched)
-    # vP_grid[r,t] = power generated by initial resource r in hour t, so indexing in dfGen_GRID 
-    # @expression(EP, evP_DAC[r in dfGen_DAC.R_ID,t=1:T], EP[:vP][r,t]) # we want to get vP index at higher R_IDs because that's how the matrix is structured
-    # @expression(EP, evP_GRID[r in dfGen_DAC.DAC_R_ID,t=1:T], EP[:vP][r,t]) # we want to get vP index at initial R_IDs because that's how the matrix is structured
-    @constraint(EP, cMaxDuplGenPwr[t=1:T], [EP[:vP][r,t] for r in dfGen_DAC.R_ID] .+ [EP[:vP][y,t] for y in dfGen_DAC.DAC_R_ID] .<= dfGen_DAC.Max_Cap_MW)
-
-    
-
-    
-    dfGen_DAC[:Max_Cap_MW, r] >= vP_DAC[r,t] + vP_grid[r,t]
-    dfGen_DAC[:Min_Cap_MW, r] <= vP_DAC[r,t] + vP_grid[r,t]
-
     # the power used for DAC and HP must also go into a power balance equation
     ## heat pump electricity demand, MW: heat pump heat output (MW thermal) / heat_pump_coeff_perf (MW thermal / MW)
     # things in power balance epxression should be scaled by omega 
-	@expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum((eDAC_power[y,t] + vHP_heat[y,t]*(1/heat_pump_coeff_perf))*omega[t] for y in intersect(dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
+	@expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum(eDAC_power[y,t] + vHP_heat[y,t]*(1/heat_pump_coeff_perf)*omega[t] for y in intersect(dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
     EP[:ePowerBalance] = EP[:ePowerBalance] - ePowerBalanceDAC
     
     
@@ -213,18 +164,26 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
 	@expression(EP, eTotalCFixedDAC, sum(eCFixed_DAC[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC
 
+    ## remove HX and only include heat pump fixed costs
+    ## heat pump fixed cost: capex ($/MW) * HP capacity (MW thermal) / heat_pump_coeff_perf (MW thermal / MW) 
     # Fixed DAC cost for energy (this covers capex of heat pump, and other energy related fixed costs for the DAC plant itself)
-    ## should eCFixed_DAC_Energy be scaled by factor of 1/heat_pump_coeff_perf? Both heatpump_cost_perMW and vHP_CAP are in terms of MW-electric, not MW-thermal 
-    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], heatpump_cost_perMW*vHP_CAP[y] + dfDac[y, :Energy_Fix_Cost_per_yr]) # heatpump_cost_perMW*vHP_CAP[y]*(1/heat_pump_coeff_perf)
-    # total fixed costs for all the DAC energy demand 
+    
+    # Energy_Fix_Cost_per_yr = 0, so that can't be the problem...
+    # could be that different ammount of HP capacity is being built, need to check values for vHP_CAP
+    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], heatpump_cost_perMW*vHP_CAP[y]*(1/heat_pump_coeff_perf) + dfDac[y, :Energy_Fix_Cost_per_yr])
+    # total fixed costs for all the DAC
 	@expression(EP, eTotalCFixedDAC_Energy, sum(eCFixed_DAC_Energy[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC_Energy
 
     # Variable cost
+    # omega = inputs["omega"] ## has to deal with subperiods and weights for time sampling
     # the total variable cost (heat cost + non-fuel vom cost) for DAC y at time t, $ = $/t CO2 * CO2 captured in hour t
+    ## @expression(EP, eCDAC_Variable[y in DAC_ID, t = 1:T],  (eDAC_heat_consumption[y,t]*fuel_cost[dfDac[y,:DAC_heat_resource]][t]*gj_to_mmbtu_conversion + dfDac[y,:Var_OM_Cost_per_tCO2]*vCO2_DAC[y,t]))  
     @expression(EP, eCDAC_Variable[y in DAC_ID, t = 1:T], (dfDac[y,:Var_OM_Cost_per_tCO2])*vCO2_DAC[y,t])  
+
     # Cost associated with variable costs for DAC for the whole year
-    @expression(EP, eCTotalVariableDACT[y in DAC_ID], sum(omega[t] * eCDAC_Variable[y,t] for t in 1:T ))
+    @expression(EP, eCTotalVariableDACT[y in DAC_ID], sum(omega[t] * (eCDAC_Variable[y,t]) for t in 1:T ))
+
     # Total variable cost for all DAC facilities across the year
     @expression(EP, eCTotalVariableDAC, sum(eCTotalVariableDACT[y] for y in DAC_ID ))
 
@@ -292,13 +251,14 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     # Constraint on maximum annual DAC removal (if applicable) [set input to -1 if no constraint on maximum capacity]
 	# DEV NOTE: This constraint may be violated in some cases where Existing_Cap_MW is >= Max_Cap_MW and lead to infeasabilty
     @expression(EP, DAC_removals_hourly[y = 1:G_DAC], sum(vCO2_DAC[y, t] for t in 1:T))
-    
-    # @constraint(EP, cDAC_CF, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(vCAP_DAC[y] * dfDac[y, :CF]  for y in 1:G_DAC))
-    @constraint(EP, cDAC_CF, DAC_removals_hourly .==  (vCAP_DAC .* dfDac.CF))
-    
-    # this cDAC_removal enforces one zone having capacity and one zone having none (if Deployment = 1Mt for zone 1, = 0Mt for zone 2)
+
     @constraint(EP, cDAC_removal[y = 1:G_DAC], DAC_removals_hourly[y] ==  dfDac[y, :Deployment])
-    # @constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
+
+    @constraint(EP, cDAC_CF[y = 1:G_DAC], DAC_removals_hourly[y] ==  vCAP_DAC[y] * dfDac[y, :CF]) # /scale_factor on CF
+
+    # @constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
+    # @constraint(EP, cDACRemoval, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
+    # @constraint(EP, cDAC_CF, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(vCAP_DAC[y] * dfDac[y, :CF]/scale_factor  for y in 1:G_DAC))
 
     # get the CO2 balance 
     # the net negative CO2 for each DAC y at each hour t, CO2 emissions from heat consumption minus CO2 captured by DAC = net negative emissions
@@ -318,10 +278,10 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     # separately account for the amount of CO2 that is captured.
     # actually the eCO2_net should be the total sequestration carbon. since eCO2_DAC_net should be a negative value, put minus sign in front of it..
     # costs associated with co2 transport & storage ($/(t CO2/h)) = captured co2 (t CO2/h) * Co2 transport and storage cost ($/t CO2)
-    @expression(EP, eCCO2_TS_ByPlant[y in DAC_ID, t = 1:T], vCO2_DAC[y, t]* dfDac[y, :CO2_Transport_Storage_Per_t])
+    @expression(EP, eCCO2_TS_ByPlant[y in DAC_ID, t = 1:T], vCO2_DAC[y, t]* dfDac[y, :CO2_Transport_Storage_Per_t]* omega[t])
     # the sequestrated CO2 from all DAC facilities 
     @expression(EP, eCCO2_TS_ByZoneT[z = 1:Z, t = 1:T], 
-        sum(eCCO2_TS_ByPlant[y, t] * omega[t] for y in dfDac[(dfDac[!, :Zone].==z), :DAC_ID]))    
+        sum(eCCO2_TS_ByPlant[y, t] for y in dfDac[(dfDac[!, :Zone].==z), :DAC_ID]))    
     # the sequestrated CO2 from all DAC facilities during the whole year ($/t CO2)
     @expression(EP, eCCO2_TS_ByZone[z = 1:Z], 
         sum(eCCO2_TS_ByZoneT[z, t] for t in 1:T))

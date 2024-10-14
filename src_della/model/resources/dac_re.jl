@@ -46,60 +46,77 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     # load dac input data and coupling parameters
     dfDac = inputs["dfDac"]
     Dac_params = inputs["Dac_params"]
+    
+    # dfDac[:,:CF] = ones(length(dfDac[:,:CF])) .* 0.98
+    println("cf:", dfDac[:,:CF])
+    
+    println("z", dfDac[dfDac.Deployment .== 1e7, :Zone])
 
     DAC_ID = dfDac[!,:DAC_ID]  # collect ids
     G_DAC = length(collect(skipmissing(dfDac[!,:R_ID])))  # number of DAC types
     
     re_dac = dfDac[dfDac.DAC_heat_resource.=="RE", :R_ID] #subset of electricity (RE) dac facilities
 
-    dfGen = inputs["dfGen"]   #generator data --> duplicated_gens if DAC == 1
+    dfGen = inputs["dfGen"]   #generator data
 
-    dfGen_GRID = dfGen[dfGen.DAC .== 0,:] # all initial generators, including generators that are not duplicated later and ones that are 
-    dfGen_DAC = dfGen[dfGen.DAC .!= 0,:] # all generators that are duplicated for DAC and are clean 
-
-    # dfGen_GRID = 
-    # for r in dfGen_DAC.DAC_R_ID
-    #     dfGen_GRID = dfGen[dfGen.DAC .== 0,:] # all initial generators that are not duplicated (generate for the grid only, not eligible for DAC) 
+    println("new gens filtering")
     
-    if additional_flag == 1
-        # ## ADDITIONAL RESOURCES, already filtered for new build, clean, and additional logic
-        # println("additional gens")
-        # ad_df = load_dataframe("/Users/margotadam/Documents/GitHub/DAC/GenX/dac_additional_resources_79_92.csv")
-        # eligible_gens = ad_df.R_ID
+    if additional_flag == "add"
+        println("additional gens")
+        ## ADDITIONAL RESOURCES, already filtered for new build, clean, and additional logic
+        ad_df = inputs["dfGen_add"]
+        eligible_gens = ad_df.R_ID
 
-        ## INCREMENTAL RESOURCES
+    elseif additional_flag == "incr"
+        # incremental: filtering for new build
         println("incremental gens")
-        # start with dfGen_DAC, these are all the resources available for DAC that are clean anyway, now needt to make sure they are new build
-        new_build_gens = intersect(dfGen_DAC[dfGen_DAC.New_Build.==1,:R_ID], dfGen_DAC[dfGen_DAC.Max_Cap_MW.!=0,:R_ID])
-        # edit duplicated gens for only new_builds
-        # all generators that are duplicated for DAC, are clean, and are incremental (new_build)
-        dfGen_DAC_incr = DataFrame([c => [] for c in names(dfGen_DAC)])
-        for r in new_build_gens
-            append!(dfGen_DAC_incr, dfGen_DAC[dfGen_DAC.R_ID.==r, :])
-        end
-        
-        # old code
-        # println("incremental gens")
-        # new_build_eligible_gens = dfGen_DAC.R_ID
-        # vre_gens = intersect(inputs["VRE"], new_build_eligible_gens) # all VRE gens (R_IDs) eligible for new build
-        # # geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
-        # nuclear_gens = intersect(inputs["nuclear"], new_build_eligible_gens)
-        # eligible_gens = [vre_gens; nuclear_gens]
-        
-    else
-        println("non-incremental gens")
-        dfGen_DAC_incr = dfGen_DAC
-        # don't need to do anything else for non-incremental because duplicated generators already filters for clean generators
-        # remove new_build requirement 
-        # vre_gens = inputs["VRE"] # all VRE gens (R_IDs) eligible for new build
-        # # geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
-        # nuclear_gens = inputs["nuclear"]
-        # eligible_gens = [vre_gens; nuclear_gens] # R_IDs of all clean gens eligible for new build
+        new_build_eligible_gens = inputs["NEW_CAP"] # R_IDs of all gens eligible for new build
+        vre_gens = intersect(inputs["VRE"], new_build_eligible_gens) # all VRE gens (R_IDs) eligible for new build
+        hydro_gens = intersect(inputs["HYDRO_RES"], new_build_eligible_gens) # all VRE gens (R_IDs) eligible for new build
+        geothermal_gens = intersect(inputs["geothermal"], new_build_eligible_gens) # all geothermal gens eligible for new build
+        nuclear_gens = intersect(inputs["nuclear"], new_build_eligible_gens)
+        nuclear_smr_gens = intersect(inputs["nuclear_smr"], new_build_eligible_gens)
+        eligible_gens = [vre_gens; hydro_gens; nuclear_gens] #; nuclear_smr_gens R_IDs of all clean gens eligible for new build
 
+    elseif additional_flag == "exist"
+        # existing only
+        println("existing gens")
+        existing_gens = dfGen[dfGen.Existing_Cap_MW.!=0,:R_ID]
+        vre_gens = intersect(inputs["VRE"], existing_gens) # all VRE gens (R_IDs) eligible for new build
+        hydro_gens = intersect(inputs["HYDRO_RES"], existing_gens) # all VRE gens (R_IDs) eligible for new build
+        geothermal_gens = intersect(inputs["geothermal"], existing_gens) # all geothermal gens eligible for new build
+        nuclear_gens = intersect(inputs["nuclear"], existing_gens) # doesn't matter if we include SMRs because non are existing anyway
+        eligible_gens = [vre_gens; hydro_gens; nuclear_gens] # R_IDs of all clean gens eligible for new build
+
+    elseif additional_flag == "all"
+        # existing + new build, non-incremental 
+        println("all gens")
+        vre_gens = inputs["VRE"] # all VRE gens (R_IDs) eligible for new build
+        geothermal_gens = inputs["geothermal"]
+        nuclear_gens = inputs["nuclear"]
+        eligible_gens = [vre_gens; nuclear_gens] # R_IDs of all clean gens
+    else 
+        # noPolicy
+        println("noPolicy")
+        eligible_gens = dfGen.R_ID
     end
+    
+    req_RIDs = []
+    if setup["MinCapReq"] == 1
+        num_reqs = inputs["NumberOfMinCapReqs"]
+        
+        # dfGen[dfGen[!, Symbol("MinCapTag_$mincap")] .== 1, :R_ID]
+        for mincap in 1:num_reqs
+            append!(req_RIDs, [y for y in dfGen[dfGen[!, Symbol("MinCapTag_$mincap")] .== 1, :R_ID]])
+        end
+    end
+    
+    eligible_gens = setdiff(eligible_gens, req_RIDs)
+    println("eligible gens:")
+    println(eligible_gens)
+    inputs["dac_eligible_gens"] = eligible_gens
 
     MW_to_GJ_conversion = Dac_params["MW_to_GJ_conversion"]   #3.6
-    
     
     #decision variables
     # vCO2_DAC: the amount of hourly capture by a DAC facility, metric ton CO2/h. 
@@ -128,15 +145,14 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     @expression(EP, eDAC_heat_demand_MWelec[y in DAC_ID, t = 1:T], EP[:eDAC_heat_consumption][y,t]*(1/MW_to_GJ_conversion)*(1/heat_pump_coeff_perf) / scale_factor)
 
     ## DAC total demand, annual demand for policy constraints (hourly, annual, emissions)
-    @expression(EP, eDAC_demand_tot[z = 1:Z, t = 1:T], sum((eDAC_heat_demand_MWelec[y,t] + EP[:eDAC_power][y, t]) * omega[t] for y in dfDac[dfDac[!,:Zone].==z,:R_ID]))
-    @expression(EP, eDAC_Annual_demand[z = 1:Z], sum(eDAC_demand_tot[z,t] for t in 1:T))
+    @expression(EP, eDAC_demand_tot[z = 1:Z, t = 1:T], sum((eDAC_heat_demand_MWelec[y,t] + EP[:eDAC_power][y, t]) for y in dfDac[dfDac[!,:Zone].==z,:R_ID]))
+    @expression(EP, eDAC_Annual_demand[z = 1:Z], sum(eDAC_demand_tot[z,t] * omega[t] for t in 1:T))
     
     ## Clean generation (RE) total generation, annual generation for policy constraints
-    # @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in intersect(eligible_gens, dfGen[dfGen[!,:Zone].==z,:R_ID])))
-    @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in dfGen_DAC_incr[dfGen_DAC_incr[!,:Zone].==z,:R_ID]))
+    @expression(EP, eRE_output[z = 1:Z, t=1:T], sum(EP[:vP][y, t] * omega[t] for y in intersect(eligible_gens, dfGen[dfGen[!,:Zone].==z,:R_ID])))         
     @expression(EP, eRE_Annual_gen[z = 1:Z], sum(eRE_output[z,t] for t in 1:T))
 
-    
+
     for z in 1:Z
         # all DAC demand in this zone that is of type RE
         dac_z_re = intersect(re_dac, dfDac[dfDac[!,:Zone].==z,:R_ID])
@@ -163,7 +179,7 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
             ## all DAC demand must be equal to current generation of all RE gens
             
         else
-            println("no policy, basecase")
+            println("noPolicy")
         end
 
         ## Heat Pump Capacity Constraints
@@ -182,20 +198,6 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
         ## DAC heat demand for hour t <= max HP capacity (implied by constraints above)
 
     end
-
-    # constraint: ensure that sum(duplicated resources power in hour t) <= max power output 
-    # r = current resource that's duplicated for both grid and DAC application
-    # vP_DAC[r,t] = power generated by duplicated resource r in hour t, so indexing in dfGen_DAC for all the duplicated resources (even if we exclude non-incremental ones, we still need to match their min/max generation so they don't get double dispatched)
-    # vP_grid[r,t] = power generated by initial resource r in hour t, so indexing in dfGen_GRID 
-    # @expression(EP, evP_DAC[r in dfGen_DAC.R_ID,t=1:T], EP[:vP][r,t]) # we want to get vP index at higher R_IDs because that's how the matrix is structured
-    # @expression(EP, evP_GRID[r in dfGen_DAC.DAC_R_ID,t=1:T], EP[:vP][r,t]) # we want to get vP index at initial R_IDs because that's how the matrix is structured
-    @constraint(EP, cMaxDuplGenPwr[t=1:T], [EP[:vP][r,t] for r in dfGen_DAC.R_ID] .+ [EP[:vP][y,t] for y in dfGen_DAC.DAC_R_ID] .<= dfGen_DAC.Max_Cap_MW)
-
-    
-
-    
-    dfGen_DAC[:Max_Cap_MW, r] >= vP_DAC[r,t] + vP_grid[r,t]
-    dfGen_DAC[:Min_Cap_MW, r] <= vP_DAC[r,t] + vP_grid[r,t]
 
     # the power used for DAC and HP must also go into a power balance equation
     ## heat pump electricity demand, MW: heat pump heat output (MW thermal) / heat_pump_coeff_perf (MW thermal / MW)
@@ -291,14 +293,17 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
     #max annual capacity constraint for DAC
     # Constraint on maximum annual DAC removal (if applicable) [set input to -1 if no constraint on maximum capacity]
 	# DEV NOTE: This constraint may be violated in some cases where Existing_Cap_MW is >= Max_Cap_MW and lead to infeasabilty
-    @expression(EP, DAC_removals_hourly[y = 1:G_DAC], sum(vCO2_DAC[y, t] for t in 1:T))
+    @expression(EP, DAC_removals_hourly[y = 1:G_DAC], sum(vCO2_DAC[y, t] * omega[t] for t in 1:T))
     
     # @constraint(EP, cDAC_CF, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(vCAP_DAC[y] * dfDac[y, :CF]  for y in 1:G_DAC))
-    @constraint(EP, cDAC_CF, DAC_removals_hourly .==  (vCAP_DAC .* dfDac.CF))
+    @constraint(EP, cDAC_CF[y = 1:G_DAC], DAC_removals_hourly[y] .==  (vCAP_DAC[y] .* dfDac[y, :CF]))
     
     # this cDAC_removal enforces one zone having capacity and one zone having none (if Deployment = 1Mt for zone 1, = 0Mt for zone 2)
     @constraint(EP, cDAC_removal[y = 1:G_DAC], DAC_removals_hourly[y] ==  dfDac[y, :Deployment])
+    
+    # turn this on when we want to allow DAC to be anywhere, no other changes necessary
     # @constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
+    
 
     # get the CO2 balance 
     # the net negative CO2 for each DAC y at each hour t, CO2 emissions from heat consumption minus CO2 captured by DAC = net negative emissions
@@ -310,7 +315,7 @@ function dac_re!(EP::Model, inputs::Dict, setup::Dict)
         sum(eCO2_DAC_net[y, t] for y in dfDac[(dfDac[!, :Zone].==z), :DAC_ID]))  
     # the net negative CO2 from all DAC facilities during the whole year
     @expression(EP, eCO2_DAC_net_ByZone[z = 1:Z], 
-        sum(eCO2_DAC_net_ByZoneT[z, t] for t in 1:T))
+        sum(eCO2_DAC_net_ByZoneT[z, t] * omega[t] for t in 1:T))
     # sum of net CO2 across all the zone
     @expression(EP, eCO2_ToT_DAC_net, sum(eCO2_DAC_net_ByZone[z] for z in 1:Z))
 

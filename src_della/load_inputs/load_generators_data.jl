@@ -5,17 +5,22 @@ Function for reading input parameters related to electricity generators (plus st
 """
 function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Dict, fuel_costs::Dict, fuel_CO2::Dict)
 
-    if (setup["DAC"] == 1)
-		# duplicated generators to see how DAC procures electricity
-		filename = "Duplicated_Generators_data.csv"
-	else
-		filename = "Generators_data.csv"
-	end
-
-	# filename = "Generators_data.csv"
-
+    filename = "Generators_data.csv"
     gen_in = load_dataframe(joinpath(path, filename))
-
+    
+    # change gen_in to have PTC for land-based wind
+    gen_in[gen_in.technology.=="LandbasedWind_Class3_Moderate_", :Var_OM_Cost_per_MWh] = ones(length(gen_in[gen_in.technology.=="LandbasedWind_Class3_Moderate_", :R_ID])) .* (13.08 * -1)
+    
+    # change gen_in to prevent nuclear retirement
+    # gen_in[gen_in.technology.=="Nuclear", :Min_Cap_MW] = [e for e in gen_in[gen_in.technology.=="Nuclear", :Existing_Cap_MW]]
+    
+    # additional generators
+    if lowercase(setup["Additional"]) == "add"
+        println("Loading additional generators in load_inputs")
+        inputs_gen["dfGen_add"] = load_dataframe(joinpath(path, "dac_additional_resources_conus_2035_z1.csv"))
+        # println(inputs_gen["dfGen_add"].Res
+    end
+    
     # Store DataFrame of generators/resources input data for use in model
     inputs_gen["dfGen"] = gen_in
 
@@ -25,7 +30,7 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 
     # Add Resource IDs after reading to prevent user errors
     gen_in[!,:R_ID] = 1:G
-
+    
     scale_factor = setup["ParameterScale"] == 1 ? ModelScalingFactor : 1
 	## Defining sets of generation and storage resources
 
@@ -48,9 +53,12 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 		inputs_gen["HYDRO_RES_KNOWN_CAP"] = intersect(gen_in[gen_in.Hydro_Energy_to_Power_Ratio.>0,:R_ID], inputs_gen["HYDRO_RES"])
 	end
 
-	inputs_gen["geothermal"] = gen_in[(gen_in.Geothermal.==1),:R_ID]
+	# inputs_gen["geothermal"] = gen_in[(gen_in.Geothermal.==1),:R_ID]
+	inputs_gen["geothermal"] = gen_in[gen_in.technology.=="Geothermal",:R_ID]
 
-	inputs_gen["nuclear"] = gen_in[(gen_in.Nuclear.==1),:R_ID]
+	# inputs_gen["nuclear"] = gen_in[(gen_in.Nuclear.==1),:R_ID]
+	inputs_gen["nuclear"] = gen_in[gen_in.technology.=="Nuclear",:R_ID]
+	inputs_gen["nuclear_smr"] = gen_in[gen_in.technology.=="Nuclear_NuclearSMR_Conservative",:R_ID]
 
 	# Set of flexible demand-side resources
 	inputs_gen["FLEX"] = gen_in[gen_in.FLEX.==1,:R_ID]
