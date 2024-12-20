@@ -57,3 +57,9 @@ function hoursafter(p::Int, t::Int, a::UnitRange{Int})::Vector{Int}
     return period * p .+ mod1.(t .+ a, p)
 
 end
+
+## scheduling operational maintenance constraints - 12/19/24
+function controlling_maintenance_start_hours(p::Int, t::Int, maintenance_duration::Int, maintenance_begin_hours)
+    controlled_hours = hoursbefore(p, t, 0:(maintenance_duration - 1))
+    return intersect(controlled_hours, maintenance_begin_hours)
+end

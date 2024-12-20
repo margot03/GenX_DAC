@@ -1,3 +1,3 @@
-Resource,R_ID,Zone,NEW_CAP,Deployment,CF,DAC_COMMIT,Min_DAC,Existing_Cap_CO2,Cap_Size,Fix_Cost_per_tCO2_yr,Energy_Fix_Cost_per_yr,Var_OM_Cost_per_tCO2,DAC_Fuel_Capture_Rate,CO2_Transport_Storage_Per_t,DAC_heat_resource,Heat_GJ_per_CO2_metric_ton,Electricity_source,Electricity_MWh_per_CO2_metric_ton,Up_Time,Down_Time
-RE_DAC_1,1,1,1,2.00E+07,0.95,1,0.1,0,10000,800,0.00E+00,40,1,0,RE,9.8,Grid,0.3,24,24
-RE_DAC_2,2,2,1,0.00E+00,0.95,1,0.1,0,10000,800,0.00E+00,40,1,0,RE,9.8,Grid,0.3,24,24
+Resource,DAC_ID,R_ID,Zone,NEW_CAP,Deployment,CF,DAC_COMMIT,Min_DAC,Existing_Cap_CO2,Cap_Size,Fix_Cost_per_tCO2_yr,Energy_Fix_Cost_per_yr,Var_OM_Cost_per_tCO2,DAC_Fuel_Capture_Rate,CO2_Transport_Storage_Per_t,DAC_heat_resource,Heat_GJ_per_CO2_metric_ton,Electricity_source,Electricity_MWh_per_CO2_metric_ton,Up_Time,Down_Time,Ramp_Dn_Percentage,Ramp_Up_Percentage,Maintenance_duration,Maint_freq_years,Maint_begin_cadence
+RE_DAC_1,1,1,1,1,1.00E+06,1,1,0.1,0,1000,800,0.00E+00,40,1,0,RE,9.8,Grid,0.3,24,24,0.1,0.1,336,1,100
+RE_DAC_2,2,2,2,1,0.00E+00,1,1,0.1,0,1000,800,0.00E+00,40,1,0,RE,9.8,Grid,0.3,24,24,0.1,0.1,336,1,100
